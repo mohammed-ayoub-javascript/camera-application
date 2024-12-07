@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "lib": ["ES2020", "DOM"] // تأكد من تضمين DOM هنا أيضًا
+  },
+  "include": ["vite.config.ts"]
+}
