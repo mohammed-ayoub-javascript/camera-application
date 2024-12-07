@@ -13,11 +13,11 @@ interface FaceData {
 
 function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null); // Change to HTMLCanvasElement
+  const canvasRef = useRef<HTMLCanvasElement | null>(null); 
   const [name, setName] = useState<string>('');
   const [faceData, setFaceData] = useState<FaceData[]>([]);
   const [retrievedName, setRetrievedName] = useState<string>('');
-  const [port] = useState<any>(null); // لتخزين منفذ الاتصال
+  const [port] = useState<any>(null); 
 
   useEffect(() => {
     startVideo();
@@ -25,7 +25,6 @@ function App() {
   }, []);
 
   useEffect(() => {
-    // إرسال الاسم إلى Arduino بعد التعرف عليه
     if (retrievedName && retrievedName !== "No matching name found.") {
       sendMessageToArduino("1");
     }
@@ -60,14 +59,12 @@ function App() {
         const detections = await faceapi.detectAllFaces(videoRef.current,
           new faceapi.TinyFaceDetectorOptions()).withFaceLandmarks().withFaceExpressions();
 
-        // If the canvas is not present, create it
         if (!canvasRef.current) {
-          // Create a new canvas element
           const canvas = document.createElement('canvas');
           canvas.width = videoRef.current.videoWidth;
           canvas.height = videoRef.current.videoHeight;
           canvasRef.current = canvas;
-          document.body.append(canvas); // Append the canvas to the body or to a specific container
+          document.body.append(canvas); 
         }
 
         const canvas = canvasRef.current as HTMLCanvasElement;
@@ -229,7 +226,6 @@ function App() {
       </div>
       {retrievedName && <h2>Retrieved Name: {retrievedName}</h2>}
       <video ref={videoRef} autoPlay muted width="940" height="650" />
-      {/* Note: Removed canvasRef from JSX to manage it dynamically */}
     </div>
   );
 }
