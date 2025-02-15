@@ -1,25 +1,20 @@
+// main.js
 import { app, BrowserWindow } from 'electron';
-import path from 'node:path';
-
+import path from 'path';
+app.commandLine.appendSwitch('enable-experimental-web-platform-features');
 
 process.env.DIST = path.join(__dirname, '../dist');
 process.env.VITE_PUBLIC = app.isPackaged ? process.env.DIST : path.join(process.env.DIST, '../public');
 
-let win: BrowserWindow | null = null;
+let win;
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL'];
 
 function createWindow() {
   win = new BrowserWindow({
-    icon: path.join(process.env.VITE_PUBLIC, 'electron-vite.svg'),
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: true,
       contextIsolation: false,
     },
-  });
-
-  win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', (new Date()).toLocaleString());
   });
 
   if (VITE_DEV_SERVER_URL) {
@@ -29,18 +24,16 @@ function createWindow() {
   }
 }
 
-// Quit when all windows are closed, except on macOS.
+app.whenReady().then(async () => {
+  createWindow();
+  try {
+  } catch (err) {
+    console.error('خطأ في الإعداد:', err);
+  }
+});
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
-    win = null;
   }
 });
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
-});
-
-app.whenReady().then(createWindow);

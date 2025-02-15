@@ -9,7 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "express": "^4.21.1",
+    "axios": "^1.7.9",
+    "express": "^4.21.2",
     "face-api.js": "^0.22.2",
     "node-serial": "^0.1.1",
     "react": "^18.2.0",
