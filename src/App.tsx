@@ -11,7 +11,12 @@ declare global {
 interface FaceData {
   name: string;
   descriptor: number[];
-  landmarks: faceapi.FaceLandmarks68;
+  // سنخزن المعالم ككائن JSON لتسهيل استرجاعها لاحقاً
+  landmarks: {
+    positions: { x: number; y: number }[];
+    imageWidth: number;
+    imageHeight: number;
+  };
   timestamp: number;
 }
 
@@ -23,7 +28,7 @@ interface LandmarkValidation {
 interface SerialPort extends EventTarget {
   readable: ReadableStream;
   writable: WritableStream;
-  open(options: SerialOptions): Promise<void>;
+  open(options: any): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -59,10 +64,10 @@ function App() {
   const SIMILARITY_WARNING_THRESHOLD = 0.7;
 
   const portRef = useRef<SerialPort | null>(null);
-  const intervalRef = useRef<number>();
+  // مرجع لمؤقت التعرف لإرسال الأمر بعد 1.5 ثانية من التعرف المستمر
+  const recognitionTimerRef = useRef<number | null>(null);
+  // علم لضمان إرسال الأمر مرة واحدة عند التعرف
   const commandSent = useRef(false);
-  const matchCounter = useRef(0);
-  const MATCH_THRESHOLD_FRAMES = 3;
   const COSINE_THRESHOLD = 0.9;
 
   const connectToArduino = async () => {
@@ -142,7 +147,7 @@ function App() {
     startVideo();
     loadModels();
     return () => {
-      if (intervalRef.current) window.clearInterval(intervalRef.current);
+      if (recognitionTimerRef.current) window.clearTimeout(recognitionTimerRef.current);
       if (videoRef.current?.srcObject) {
         (videoRef.current.srcObject as MediaStream).getTracks().forEach((track) => track.stop());
       }
@@ -201,8 +206,13 @@ function App() {
         }
         
         const storedDescriptor = new Float32Array(data.descriptor);
-        const storedLandmarks = faceapi.FaceLandmarks68.fromJSON(data.landmarks);
-        
+        // إعادة بناء معالم الوجه من البيانات المحفوظة
+        const storedLandmarks = new faceapi.FaceLandmarks68(
+          data.landmarks.positions.map(p => new faceapi.Point(p.x, p.y)), 
+          data.landmarks.imageWidth, 
+          data.landmarks.imageHeight,
+        );
+                
         const similarity = cosineSimilarity(descriptor, storedDescriptor);
         const landmarksValid = compareLandmarks(landmarks, storedLandmarks);
         
@@ -219,7 +229,7 @@ function App() {
   }, []);
 
   const faceMyDetect = () => {
-    intervalRef.current = window.setInterval(async () => {
+    setInterval(async () => {
       if (!videoRef.current || !canvasRef.current) return;
       
       try {
@@ -231,18 +241,22 @@ function App() {
         const context = canvasRef.current.getContext('2d');
         if (!context) return;
         
-        context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        // مطابقة أبعاد الكانفاس مع حجم الفيديو
         faceapi.matchDimensions(canvasRef.current, {
           width: videoRef.current.videoWidth,
           height: videoRef.current.videoHeight,
         });
         
+        // مسح الكانفاس
+        context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        
+        // إعادة تحجيم النتائج
         const resized = faceapi.resizeResults(detections, {
           width: videoRef.current.videoWidth,
           height: videoRef.current.videoHeight,
         });
         
-        let faceFound = false;
+        let recognizedName: string | null = null;
         
         resized.forEach((detection) => {
           const box = detection.detection.box;
@@ -251,55 +265,41 @@ function App() {
           const foundName = getMatchingName(descriptor, landmarks);
           
           if (foundName) {
-            faceFound = true;
+            recognizedName = foundName;
+            // رسم مربع أخضر مع الاسم
             context.strokeStyle = '#00FF00';
             context.fillStyle = '#00FF00';
+            context.lineWidth = 2;
+            context.strokeRect(box.x, box.y, box.width, box.height);
             context.fillText(foundName, box.x + 5, box.y - 10);
           } else {
-            const similarity = Object.keys(localStorage).reduce((max, key) => {
-              try {
-                const item = localStorage.getItem(key);
-                if (!item) return max;
-                
-                const data = JSON.parse(item) as FaceData;
-                if (!data.descriptor) return max;
-                
-                return Math.max(
-                  max, 
-                  cosineSimilarity(descriptor, new Float32Array(data.descriptor))
-                );
-              } catch (error) {
-                return max;
-              }
-            }, 0);
-            
-            if (similarity > SIMILARITY_WARNING_THRESHOLD) {
-              context.strokeStyle = '#FF0000';
-              context.fillStyle = '#FF0000';
-              context.fillText('Unknown Similar Face!', box.x + 5, box.y - 10);
-            } else {
-              context.strokeStyle = '#0000FF';
-              context.fillStyle = '#0000FF';
-              context.fillText('Unknown', box.x + 5, box.y - 10);
-            }
+            // في حالة عدم التعرف، رسم مربع باللون الأزرق (يمكنك التعديل حسب الحاجة)
+            context.strokeStyle = '#0000FF';
+            context.fillStyle = '#0000FF';
+            context.lineWidth = 2;
+            context.strokeRect(box.x, box.y, box.width, box.height);
+            context.fillText('Unknown', box.x + 5, box.y - 10);
           }
-          
-          context.lineWidth = 2;
-          context.strokeRect(box.x, box.y, box.width, box.height);
         });
         
-        if (faceFound) matchCounter.current += 1;
-        else matchCounter.current = 0;
-        
-        if (matchCounter.current >= MATCH_THRESHOLD_FRAMES && !commandSent.current) {
-          sendSerialCommand('O');
-          commandSent.current = true;
-        }
-        
-        if (!faceFound) {
+        // منطق المؤقت لإرسال الأمر "O" بعد 1.5 ثانية من استمرار التعرف على الوجه
+        if (recognizedName) {
+          if (!commandSent.current && !recognitionTimerRef.current) {
+            recognitionTimerRef.current = window.setTimeout(() => {
+              sendSerialCommand('O');
+              commandSent.current = true;
+              recognitionTimerRef.current = null;
+            }, 1500);
+          }
+        } else {
+          // إذا لم يتم التعرف على أي وجه، إلغاء المؤقت وإعادة تعيين العلم
+          if (recognitionTimerRef.current) {
+            window.clearTimeout(recognitionTimerRef.current);
+            recognitionTimerRef.current = null;
+          }
           commandSent.current = false;
-          matchCounter.current = 0;
         }
+        
       } catch (error) {
         console.error('Face detection error:', error);
       }
@@ -331,10 +331,17 @@ function App() {
         throw new Error(`وجه غير واضح: ${landmarksValidation.reason}`);
       }
   
+      // تحويل معالم الوجه إلى كائن JSON لتخزينها
+      const landmarksData = {
+        positions: detection.landmarks.positions.map(p => ({ x: p.x, y: p.y })),
+        imageWidth: detection.landmarks.imageWidth,
+        imageHeight: detection.landmarks.imageHeight,
+      };
+  
       const newFaceData: FaceData = {
         name,
         descriptor: Array.from(detection.descriptor),
-        landmarks: detection.landmarks.toJSON(),
+        landmarks: landmarksData,
         timestamp: Date.now(),
       };
   
